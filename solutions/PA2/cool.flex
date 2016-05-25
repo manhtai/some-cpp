@@ -34,7 +34,7 @@ extern FILE *fin; /* we read from this file */
 char string_buf[MAX_STR_CONST]; /* to assemble string constants */
 char *string_buf_ptr;
 
-extern int line_num;
+extern int curr_lineno;
 extern int verbose_flag;
 
 extern YYSTYPE cool_yylval;
@@ -42,8 +42,13 @@ extern YYSTYPE cool_yylval;
 /*
  *  Add Your own definitions here
  */
-int line_num = 0;
 int comment_depth = 0;
+int string_len = 0;
+
+bool is_string_too_long();
+void reset_string();
+int string_len_err();
+int try_add_to_string(char* str);
 
 %}
 
@@ -57,6 +62,8 @@ ALNUM           [0-9a-zA-Z_]
 WS              [ \r\v\f\t]
 
 %x COMMENT
+%x STRING
+%x NEW_STRING
 
 %%
 
@@ -67,7 +74,7 @@ WS              [ \r\v\f\t]
                             comment_depth++;
                             BEGIN(COMMENT);
                         }
-<COMMENT>\n             { line_num++; }
+<COMMENT>\n             { curr_lineno++; }
 <COMMENT>.              {}
 <COMMENT>"*)"           {   comment_depth--;
                             if (comment_depth == 0) {
@@ -84,8 +91,8 @@ WS              [ \r\v\f\t]
                             return(ERROR);
                         }
 
-"--".*\n                { line_num++; }
-"--".*                  { line_num++; }
+"--".*\n                { curr_lineno++; }
+"--".*                  { curr_lineno++; }
 
  /*
   *  The multiple-character operators.
@@ -164,12 +171,63 @@ f(?i:alse)              {
   *
   */
 
+\"                      {
+                              BEGIN(STRING);
+                        }
+<STRING>\"              {
+                              cool_yylval.symbol = stringtable.add_string(string_buf);
+                              reset_string();
+                              BEGIN(INITIAL);
+                              return(STR_CONST);
+                        }
+<STRING>(\0|\\\0)       {
+                              cool_yylval.error_msg = "String contains null character";
+                              BEGIN(NEW_STRING);
+                              return(ERROR);
+                        }
+<NEW_STRING>.*[\"\n]    {
+                              BEGIN(INITIAL);
+                        }
+<STRING>\\\n            {
+                              try_add_to_string("\n");
+                              curr_lineno++;
+                        }
+<STRING>\n              {
+                              BEGIN(INITIAL);
+                              curr_lineno++;
+                              reset_string();
+                              cool_yylval.error_msg = "Unterminated string constant";
+                              return(ERROR);
+                        }
+<STRING><<EOF>>         {
+                              BEGIN(INITIAL);
+                              cool_yylval.error_msg = "EOF in string constant";
+                              return(ERROR);
+                        }
+<STRING>\\n             {
+                              try_add_to_string("\n");
+                        }
+<STRING>\\t             {
+                              try_add_to_string("\t");
+                        }
+<STRING>\\b             {
+                              try_add_to_string("\b");
+                        }
+<STRING>\\f             {
+                              try_add_to_string("\f");
+                        }
+<STRING>\\.             {
+                              try_add_to_string(&strdup(yytext)[1]);
+                        }
+<STRING>.               {
+                              try_add_to_string(yytext);
+                        }
 
   /*
    * The rest
    */
 
-\n                      { line_num++; }
+\n                      { curr_lineno++; }
 
 {WS}+                   {}
 
@@ -179,3 +237,34 @@ f(?i:alse)              {
                         }
 
 %%
+
+int try_add_to_string(char* str) {
+        if (is_string_too_long()) {
+                return string_len_err();
+        }
+        strcat(string_buf, str);
+        string_len++;
+        return 0;
+}
+
+
+bool is_string_too_long() {
+        if (string_len + 1 >= MAX_STR_CONST) {
+                BEGIN(NEW_STRING);
+                return true;
+        }
+        return false;
+}
+
+
+void reset_string() {
+        string_len = 0;
+        string_buf[0] = '\0';
+}
+
+
+int string_len_err() {
+        reset_string();
+        cool_yylval.error_msg = "String constant too long";
+        return(ERROR);
+}
