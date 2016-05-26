@@ -44,6 +44,7 @@ extern YYSTYPE cool_yylval;
  */
 int comment_depth = 0;
 int string_len = 0;
+int er;
 
 bool is_string_too_long();
 void reset_string();
@@ -189,7 +190,8 @@ f(?i:alse)              {
                               BEGIN(INITIAL);
                         }
 <STRING>\\\n            {
-                              try_add_to_string("\n");
+                              er = try_add_to_string("\n");
+                              if (er == ERROR) return er;
                               curr_lineno++;
                         }
 <STRING>\n              {
@@ -205,22 +207,28 @@ f(?i:alse)              {
                               return(ERROR);
                         }
 <STRING>\\n             {
-                              try_add_to_string("\n");
+                              er = try_add_to_string("\n");
+                              if (er == ERROR) return er;
                         }
 <STRING>\\t             {
-                              try_add_to_string("\t");
+                              er = try_add_to_string("\t");
+                              if (er == ERROR) return er;
                         }
 <STRING>\\b             {
-                              try_add_to_string("\b");
+                              er = try_add_to_string("\b");
+                              if (er == ERROR) return er;
                         }
 <STRING>\\f             {
-                              try_add_to_string("\f");
+                              er = try_add_to_string("\f");
+                              if (er == ERROR) return er;
                         }
 <STRING>\\.             {
-                              try_add_to_string(&strdup(yytext)[1]);
+                              er = try_add_to_string(&strdup(yytext)[1]);
+                              if (er == ERROR) return er;
                         }
 <STRING>.               {
-                              try_add_to_string(yytext);
+                              er = try_add_to_string(yytext);
+                              if (er == ERROR) return er;
                         }
 
   /*
